@@ -1,0 +1,22 @@
+BEGIN
+    EXECUTE IMMEDIATE 'CREATE TABLE MyTable (
+        id NUMBER,
+        val NUMBER
+    )';
+END;
+/
+
+BEGIN
+    FOR i IN 1..10000 LOOP
+        INSERT INTO MyTable (id, val)
+        VALUES (i, ROUND(DBMS_RANDOM.VALUE(1, 10000)));
+    END LOOP;
+    COMMIT;
+END;
+/
+
+SELECT * FROM MYTABLE 
+ORDER BY id ASC;
+/
+
+

@@ -178,3 +178,49 @@ select *
  where id = 1;
 /
 
+
+-- TASK 6
+create or replace function calculate_reward (
+   percent number,
+   salary  number
+) return number is
+   percent_rate number;
+   total        number;
+   percent_out_of_range exception;
+   salary_out_of_range exception;
+begin
+   if percent > 100
+   or percent < 0 then
+      raise percent_out_of_range;
+   end if;
+   if salary <= 0 then
+      raise salary_out_of_range;
+   end if;
+
+   percent_rate := percent / 100;
+   total := ( 1 + percent_rate ) * 12 * salary;
+   return total;
+exception
+   when percent_out_of_range then
+      raise_application_error(
+         -20000,
+         'Entered percent '
+         || percent
+         || '% must be in range [0, 100]'
+      );
+   when salary_out_of_range then
+      raise_application_error(
+         -20001,
+         'Entered salary ('
+         || salary
+         || ') must be positive'
+      );
+end;
+/
+
+select calculate_reward(
+   1e100,
+   1e100
+)
+  from dual;
+/

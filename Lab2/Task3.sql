@@ -1,0 +1,39 @@
+create or replace trigger groups_cascade_delete after
+   delete on groups
+   for each row
+begin
+   delete from students
+    where group_id = :old.id;
+end;
+/
+
+
+-- TESTING FIELD
+
+insert into groups (
+   name,
+   c_val
+) values ( '253504',
+           0 );
+
+select *
+  from groups;
+
+insert into students (
+   name,
+   group_id
+) values ( 'NikitaStud',
+           3 );
+
+select *
+  from students
+ where name = 'NikitaStud';
+
+
+delete from groups
+ where name = '253504';
+
+delete from students
+ where students.id = 1;
+
+commit;

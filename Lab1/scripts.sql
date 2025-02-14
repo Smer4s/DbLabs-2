@@ -1,30 +1,31 @@
 -- TASK 1
 
 create table mytable (
-   id  number,
+   id  number
+      generated always as identity,
    val number
 )
 /
+
+
 
 select table_name
   from user_tables
  where table_name = 'MYTABLE';
 /
 
+drop table mytable;
+
 -- TASK 2
 
 declare
-   number_count number := 10000;
+   number_count number := 10;
 begin
    for i in 1..number_count loop
-      insert into mytable (
-         id,
-         val
-      ) values ( i,
-                 round(dbms_random.value(
-                    1,
-                    number_count
-                 )) );
+      insert into mytable ( val ) values ( round(dbms_random.value(
+         1,
+         number_count
+      )) );
    end loop;
 end;
 /
@@ -106,20 +107,17 @@ end;
 /
 
 begin
-   generate_insert_command(5);
+   generate_insert_command(2);
 end;
 /
 
 -- TASK 5
 create or replace procedure insert_record (
-   p_id  in number,
    p_val in number
 ) is
    v_sql varchar2(100);
 begin
-   v_sql := 'INSERT INTO MyTable (id, val) VALUES ('
-            || p_id
-            || ', '
+   v_sql := 'INSERT INTO MyTable (val) VALUES ('
             || p_val
             || ')';
    execute immediate v_sql;
@@ -161,21 +159,17 @@ end;
 
 
 begin
-   insert_record(
-      1,
-      2
-   );
-   update_record(
-      1,
-      3
-   );
-   delete_record(1);
+   insert_record(2);
+   -- update_record(
+   --    -5,
+   --    2
+   -- );
+   -- delete_record(-5);
 end;
 /
 
 select *
-  from mytable
- where id = 1;
+  from mytable order by id asc;
 /
 
 
@@ -196,7 +190,6 @@ begin
    if salary <= 0 then
       raise salary_out_of_range;
    end if;
-
    percent_rate := percent / 100;
    total := ( 1 + percent_rate ) * 12 * salary;
    return total;
@@ -219,8 +212,8 @@ end;
 /
 
 select calculate_reward(
-   1e100,
-   1e100
+   null,
+   1e124
 )
   from dual;
 /

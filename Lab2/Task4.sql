@@ -1,0 +1,106 @@
+CREATE TABLE STUDENTS_LOG (
+    LOG_ID NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    OPERATION VARCHAR2(10),
+    STUDENT_ID NUMBER,
+    STUDENT_NAME VARCHAR2(100),
+    GROUP_ID NUMBER,
+    OPERATION_DATE TIMESTAMP
+);
+
+select table_name
+  from user_tables
+ where table_name = 'STUDENTS_LOG';
+/
+
+
+-- CREATE
+
+CREATE OR REPLACE TRIGGER log_students_create
+AFTER INSERT ON STUDENTS
+FOR EACH ROW
+BEGIN
+    INSERT INTO STUDENTS_LOG (
+        OPERATION,
+        STUDENT_ID,
+        STUDENT_NAME,
+        GROUP_ID,
+        OPERATION_DATE
+    ) VALUES (
+        'CREATE',
+        :NEW.ID,
+        :NEW.NAME,
+        :NEW.GROUP_ID,
+        SYSTIMESTAMP
+    );
+END;
+/
+
+
+-- READ
+
+-- Триггер для чтения данных
+CREATE OR REPLACE TRIGGER log_students_read
+AFTER SELECT FROM STUDENTS
+FOR EACH ROW
+BEGIN
+    INSERT INTO STUDENTS_LOG (
+        OPERATION,
+        STUDENT_ID,
+        STUDENT_NAME,
+        GROUP_ID,
+        OPERATION_DATE
+    ) VALUES (
+        'READ',
+        :NEW.ID,
+        :NEW.NAME,
+        :NEW.GROUP_ID,
+        SYSTIMESTAMP
+    );
+END;
+/
+
+
+-- UPDATE
+
+CREATE OR REPLACE TRIGGER log_students_update
+AFTER UPDATE ON STUDENTS
+FOR EACH ROW
+BEGIN
+    INSERT INTO STUDENTS_LOG (
+        OPERATION,
+        STUDENT_ID,
+        STUDENT_NAME,
+        GROUP_ID,
+        OPERATION_DATE
+    ) VALUES (
+        'UPDATE',
+        :OLD.ID,
+        :NEW.NAME,
+        :NEW.GROUP_ID,
+        SYSTIMESTAMP
+    );
+END;
+/
+
+
+-- DELETE
+
+CREATE OR REPLACE TRIGGER log_students_delete
+AFTER DELETE ON STUDENTS
+FOR EACH ROW
+BEGIN
+    INSERT INTO STUDENTS_LOG (
+        OPERATION,
+        STUDENT_ID,
+        STUDENT_NAME,
+        GROUP_ID,
+        OPERATION_DATE
+    ) VALUES (
+        'DELETE',
+        :OLD.ID,
+        :OLD.NAME,
+        :OLD.GROUP_ID,
+        SYSTIMESTAMP
+    );
+END;
+/

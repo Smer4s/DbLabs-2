@@ -1,10 +1,12 @@
-CREATE TABLE STUDENTS_LOG (
-    LOG_ID NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    OPERATION VARCHAR2(10),
-    STUDENT_ID NUMBER,
-    STUDENT_NAME VARCHAR2(100),
-    GROUP_ID NUMBER,
-    OPERATION_DATE TIMESTAMP
+create table students_log (
+   log_id         number
+      generated always as identity
+   primary key,
+   operation      varchar2(10),
+   student_id     number,
+   student_name   varchar2(100),
+   group_id       number,
+   operation_date timestamp
 );
 
 select table_name
@@ -15,92 +17,89 @@ select table_name
 
 -- CREATE
 
-CREATE OR REPLACE TRIGGER log_students_create
-AFTER INSERT ON STUDENTS
-FOR EACH ROW
-BEGIN
-    INSERT INTO STUDENTS_LOG (
-        OPERATION,
-        STUDENT_ID,
-        STUDENT_NAME,
-        GROUP_ID,
-        OPERATION_DATE
-    ) VALUES (
-        'CREATE',
-        :NEW.ID,
-        :NEW.NAME,
-        :NEW.GROUP_ID,
-        SYSTIMESTAMP
-    );
-END;
+create or replace trigger log_students_create after
+   insert on students
+   for each row
+begin
+   insert into students_log (
+      operation,
+      student_id,
+      student_name,
+      group_id,
+      operation_date
+   ) values ( 'CREATE',
+              :new.id,
+              :new.name,
+              :new.group_id,
+              systimestamp );
+end;
 /
-
-
--- READ
-
--- Триггер для чтения данных
-CREATE OR REPLACE TRIGGER log_students_read
-AFTER SELECT FROM STUDENTS
-FOR EACH ROW
-BEGIN
-    INSERT INTO STUDENTS_LOG (
-        OPERATION,
-        STUDENT_ID,
-        STUDENT_NAME,
-        GROUP_ID,
-        OPERATION_DATE
-    ) VALUES (
-        'READ',
-        :NEW.ID,
-        :NEW.NAME,
-        :NEW.GROUP_ID,
-        SYSTIMESTAMP
-    );
-END;
-/
-
 
 -- UPDATE
 
-CREATE OR REPLACE TRIGGER log_students_update
-AFTER UPDATE ON STUDENTS
-FOR EACH ROW
-BEGIN
-    INSERT INTO STUDENTS_LOG (
-        OPERATION,
-        STUDENT_ID,
-        STUDENT_NAME,
-        GROUP_ID,
-        OPERATION_DATE
-    ) VALUES (
-        'UPDATE',
-        :OLD.ID,
-        :NEW.NAME,
-        :NEW.GROUP_ID,
-        SYSTIMESTAMP
-    );
-END;
+create or replace trigger log_students_update after
+   update on students
+   for each row
+begin
+   insert into students_log (
+      operation,
+      student_id,
+      student_name,
+      group_id,
+      operation_date
+   ) values ( 'UPDATE',
+              :old.id,
+              :new.name,
+              :new.group_id,
+              systimestamp );
+end;
 /
 
 
 -- DELETE
 
-CREATE OR REPLACE TRIGGER log_students_delete
-AFTER DELETE ON STUDENTS
-FOR EACH ROW
-BEGIN
-    INSERT INTO STUDENTS_LOG (
-        OPERATION,
-        STUDENT_ID,
-        STUDENT_NAME,
-        GROUP_ID,
-        OPERATION_DATE
-    ) VALUES (
-        'DELETE',
-        :OLD.ID,
-        :OLD.NAME,
-        :OLD.GROUP_ID,
-        SYSTIMESTAMP
-    );
-END;
+create or replace trigger log_students_delete after
+   delete on students
+   for each row
+begin
+   insert into students_log (
+      operation,
+      student_id,
+      student_name,
+      group_id,
+      operation_date
+   ) values ( 'DELETE',
+              :old.id,
+              :old.name,
+              :old.group_id,
+              systimestamp );
+end;
 /
+
+
+-- TESTING FIELD
+
+
+insert into students (
+   name,
+   group_id
+) values ( 'NikitaStud',
+           3 );
+
+update students
+   set
+   name = 'NikitaStud2'
+ where name = 'NikitaStud';
+
+
+delete from students
+ where id = 21;
+
+select *
+  from students;
+
+
+select *
+  from students_log;
+
+commit;

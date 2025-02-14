@@ -15,7 +15,7 @@ end;
 /
 
 create or replace trigger students_check_unique_id before
-   insert or update on students
+   insert on students
    for each row
 declare
    v_count number;
@@ -54,7 +54,7 @@ end;
 /
 
 create or replace trigger groups_check_unique_id before
-   insert or update on groups
+   insert on groups
    for each row
 declare
    v_count number;
@@ -73,7 +73,7 @@ end;
 /
 
 create or replace trigger groups_check_unique_name before
-   insert or update on groups
+   insert on groups
    for each row
 declare
    v_count number;
@@ -100,19 +100,25 @@ drop trigger groups_check_unique_name;
 -- TESTING FIELD
 
 insert into groups (
+   id,
    name,
    c_val
-) values ( '253504',
+) values ( 4, '253505',
            0 );
 
 select *
   from groups;
 
+delete from groups where id = 4;
+
+select *
+  from students;
+
 insert into students (
    name,
    group_id
-) values ( 'NikitaStud',
-           1 );
+) values ( 'NikitaStud2',
+           4 );
 
 select *
   from students

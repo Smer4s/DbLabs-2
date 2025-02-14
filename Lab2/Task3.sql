@@ -1,4 +1,4 @@
-create or replace trigger groups_cascade_delete after
+create or replace trigger groups_cascade_delete before
    delete on groups
    for each row
 begin
@@ -9,6 +9,8 @@ end;
 
 
 -- TESTING FIELD
+
+drop trigger groups_cascade_delete;
 
 insert into groups (
    name,

@@ -39,6 +39,7 @@ drop trigger students_check_unique_id;
 
 -- GROUPS
 
+
 create sequence groups_seq start with 1 increment by 1 nocache;
 
 create or replace trigger groups_auto_increment before
@@ -100,10 +101,9 @@ drop trigger groups_check_unique_name;
 -- TESTING FIELD
 
 insert into groups (
-   id,
    name,
    c_val
-) values ( 4, '253505',
+) values ( '253505',
            0 );
 
 select *
@@ -118,10 +118,10 @@ insert into students (
    name,
    group_id
 ) values ( 'NikitaStud2',
-           4 );
+           7 );
 
 select *
   from students
- where name = 'NikitaStud';
+ where name = 'NikitaStud2';
 
 commit;

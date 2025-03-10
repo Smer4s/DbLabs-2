@@ -104,23 +104,35 @@ begin
    declare
       v_group_old_name varchar2(100);
    begin
-      select name
-        into v_group_old_name
-        from groups
-       where id = :old.group_id;
-      insert into students_log (
-         operation,
-         student_id,
-         student_old_name,
-         group_old_id,
-         group_old_name,
-         operation_date
-      ) values ( 'DELETE',
-                 :old.id,
-                 :old.name,
-                 :old.group_id,
-                 v_group_old_name,
-                 systimestamp );
+      if triggers_functions.is_cascade = false then
+         dbms_output.put_line('Current var state is false');
+      elsif triggers_functions.is_cascade = true then
+         dbms_output.put_line('true');
+      elsif triggers_functions.is_cascade is null then
+         dbms_output.put_line('awdawd');
+      elsif triggers_functions.is_cascade is not null then
+         dbms_output.put_line('Not null');
+      end if;
+
+      if triggers_functions.is_cascade = false then
+         select name
+           into v_group_old_name
+           from groups
+          where id = :old.group_id;
+         insert into students_log (
+            operation,
+            student_id,
+            student_old_name,
+            group_old_id,
+            group_old_name,
+            operation_date
+         ) values ( 'DELETE',
+                    :old.id,
+                    :old.name,
+                    :old.group_id,
+                    v_group_old_name,
+                    systimestamp );
+      end if;
    end;
 end;
 /
@@ -130,6 +142,19 @@ end;
 
 -- TESTING FIELD
 
+insert into groups (
+   name,
+   c_val
+) values ( '253503',
+           0 );
+
+
+
+
+update students
+   set name = 'NikitaStud3',
+       group_id = 3
+ where id = 40;
 
 insert into students (
    id,
@@ -137,12 +162,7 @@ insert into students (
    group_id
 ) values ( 40,
            'NikitaStud',
-           3 );
-
-update students
-   set name = 'NikitaStud3',
-       group_id = 3
- where id = 40;
+           11 );
 
 
 delete from students
@@ -155,7 +175,10 @@ select *
   from groups;
 
 
+
 select *
   from students_log;
+
+delete from students_log;
 
 commit;

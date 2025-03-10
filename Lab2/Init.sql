@@ -17,3 +17,10 @@ select table_name
  where table_name in ( 'STUDENTS',
                        'GROUPS' );
 /
+
+create or replace package triggers_functions is
+   is_cascade boolean := false;
+end;
+/
+
+commit;

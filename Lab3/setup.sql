@@ -1,25 +1,42 @@
-create user dev identified by admin;
-grant all privileges to dev;
-alter session set current_schema = dev;
+drop user developer cascade;
+drop user production cascade;
 
-create user prod identified by admin;
-grant all privileges to prod;
-alter session set current_schema = prod;
+commit;
 
+-- Environment Configuration
+create user developer identified by admin;
+grant all privileges to developer;
+alter session set current_schema = developer;
 
-drop user dev cascade;
-drop user prod cascade;
+create user production identified by admin;
+grant all privileges to production;
+alter session set current_schema = production;
 
-create table prod.osisp (
-   osisp_id_id number not null
+create table developer.test (
+   id number not null
 );
 
-create table dev.osisp (
-   osisp_id_id varchar(10) not null
+drop table developer.test;
+
+create table production.test (
+   id varchar(10) not null
 );
 
-drop table dev.osisp;
+drop table production.test;
 
-select * 
-  from all_tables
-  WHERE TABLESPACE_NAME = 'USERS';
+
+create or replace procedure developer.executestepone (
+   inputparam int
+) is
+begin
+   dbms_output.put_line('Input value: ' || to_char(inputparam));
+end;
+/
+
+create or replace procedure production.executestepone (
+   input varchar
+) is
+begin
+   dbms_output.put_line(input);
+end;
+/

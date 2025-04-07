@@ -8,169 +8,150 @@ create or replace type dep_tab as
    table of dep_rec;
 /
 
-create or replace procedure sync_schema_structures (
-   p_source_schema in varchar2,
-   p_target_schema in varchar2
+create or replace procedure sync_database (
+   dev_schema_name  in varchar2,
+   prod_schema_name in varchar2
 ) as
-
-   cnt_src_schema number;
-   cnt_tgt_schema number;
-   ddl_script     clob;
-   hascycle       boolean := false;
-   fkdeps         dep_tab := dep_tab();
-   type t_obj_rec is record (
-         tbl_name varchar2(128),
-         cyclic   boolean
+   v_count          number;
+   v_cycle_detected boolean := false;
+   v_ddl            clob;
+   v_dependencies   dep_tab := dep_tab();
+   type table_rec is record (
+         object_name varchar2(128),
+         has_cycle   boolean
    );
-   type t_obj_table is
-      table of t_obj_rec;
-   sortedobjs     t_obj_table := t_obj_table();
-   cursor cur_missing_diff is
-   select table_name
-     from (
-      select table_name
-        from all_tables
-       where owner = upper(p_source_schema)
-      minus
-      select table_name
-        from all_tables
-       where owner = upper(p_target_schema)
-   )
+   type table_tab is
+      table of table_rec;
+   v_sorted_tables  table_tab := table_tab();
+
+--все таблицы которые нужно создать или обновить в проде
+   cursor object_diff_to_prod is
+   select t.table_name as object_name
+     from all_tables t
+    where t.owner = upper(dev_schema_name)
+   minus
+   select t2.table_name
+     from all_tables t2
+    where t2.owner = upper(prod_schema_name)
    union
-   select table_name
+        --сравнение структуры таблиц 
+   select tc1.table_name
      from (
       select table_name,
-             count(*) as num_cols,
+             count(column_name) as col_count,
              listagg(column_name
                      || ':'
                      || data_type,
                      ',') within group(
               order by column_name) as structure
         from all_tab_columns
-       where owner = upper(p_source_schema)
+       where owner = upper(dev_schema_name)
        group by table_name
       minus
       select table_name,
-             count(*) as num_cols,
+             count(column_name) as col_count,
              listagg(column_name
                      || ':'
                      || data_type,
                      ',') within group(
               order by column_name) as structure
         from all_tab_columns
-       where owner = upper(p_target_schema)
+       where owner = upper(prod_schema_name)
        group by table_name
-   );
+   ) tc1;
 
+-- все таблицы, которые есть в проде и нет в леве
+   cursor object_diff_to_drop is
+   select t.table_name as object_name
+     from all_tables t
+    where t.owner = upper(prod_schema_name)
+   minus
+   select t2.table_name
+     from all_tables t2
+    where t2.owner = upper(dev_schema_name);
 
-
-
-   cursor cur_extra_objs is
-   select table_name
-     from (
-      select table_name
-        from all_tables
-       where owner = upper(p_target_schema)
-      minus
-      select table_name
-        from all_tables
-       where owner = upper(p_source_schema)
-   );
-
-
-
-
-   procedure perform_topology_sort is
-
-      type t_bool_map is
+   procedure topological_sort is
+      type visited_tab is
          table of boolean index by varchar2(128);
-      visited    t_bool_map;
-      tempmarks  t_bool_map;
-      addednodes t_bool_map;
-      localorder t_obj_table := t_obj_table();
+      v_visited   visited_tab;
+      v_temp_mark visited_tab;
+      type added_tab is
+         table of boolean index by varchar2(128);
+      v_added     added_tab;
+      v_tables    table_tab := table_tab();
 
-
-      procedure visit_node (
-         p_tbl_name varchar2
+      procedure visit (
+         p_table_name in varchar2
       ) is
-         localcycle boolean := false;
+         v_has_cycle boolean := false;
       begin
-         if tempmarks.exists(p_tbl_name) then
-            hascycle := true;
-            localcycle := true;
-            if not addednodes.exists(p_tbl_name) then
-               localorder.extend;
-               localorder(localorder.last) := t_obj_rec(
-                  p_tbl_name,
-                  localcycle
+         if v_temp_mark.exists(p_table_name) then
+            v_cycle_detected := true;
+            v_has_cycle := true;
+            if not v_added.exists(p_table_name) then
+               v_tables.extend;
+               v_tables(v_tables.last) := table_rec(
+                  p_table_name,
+                  v_has_cycle
                );
-               addednodes(p_tbl_name) := true;
+               v_added(p_table_name) := true;
             end if;
             return;
          end if;
-
-         if not visited.exists(p_tbl_name) then
-            tempmarks(p_tbl_name) := true;
-            for idx in 1..fkdeps.count loop
-               if fkdeps(idx).table_name = p_tbl_name then
-                  visit_node(fkdeps(idx).depends_on);
+         if not v_visited.exists(p_table_name) then
+            v_temp_mark(p_table_name) := true;
+                -- если p_table_name имеет завис от др таблицы – вызываем visit ей
+            for i in 1..v_dependencies.count loop
+               if v_dependencies(i).table_name = p_table_name then
+                  visit(v_dependencies(i).depends_on);
                end if;
             end loop;
-            visited(p_tbl_name) := true;
-            tempmarks.delete(p_tbl_name);
-            if not addednodes.exists(p_tbl_name) then
-               localorder.extend;
-               localorder(localorder.last) := t_obj_rec(
-                  p_tbl_name,
-                  localcycle
+            v_visited(p_table_name) := true;
+            v_temp_mark.delete(p_table_name);
+            if not v_added.exists(p_table_name) then
+               v_tables.extend;
+               v_tables(v_tables.last) := table_rec(
+                  p_table_name,
+                  v_has_cycle
                );
-               addednodes(p_tbl_name) := true;
+               v_added(p_table_name) := true;
             end if;
          end if;
-      end visit_node;
-
+      end visit;
    begin
-      for rec in cur_missing_diff loop
-         if not visited.exists(rec.table_name) then
-            visit_node(rec.table_name);
+      for rec in object_diff_to_prod loop
+         if not v_visited.exists(rec.object_name) then
+            visit(rec.object_name);
          end if;
       end loop;
-
-
-      sortedobjs := localorder;
-      if hascycle then
-         dbms_output.put_line('### ВАЖНО: Обнаружены циклические зависимости между таблицами! ###');
-      else
-         dbms_output.put_line('### Сортировка зависимостей завершена успешно ###');
+      v_sorted_tables := v_tables;
+      if v_cycle_detected then
+         dbms_output.put_line('Cyclic reference!');
       end if;
-   end perform_topology_sort;
+   end topological_sort;
 
-
-
-
-   procedure refine_order is
-
-      type t_sort_info is record (
-            name       varchar2(128),
-            cycle_flag boolean,
-            depcount   number
+   procedure sort_tables is
+      type sort_rec is record (
+            object_name varchar2(128),
+            has_cycle   boolean,
+            dep_count   number
       );
-      type t_sort_array is
-         table of t_sort_info index by pls_integer;
-      sortdata  t_sort_array;
-      temprec   t_sort_info;
-      totalobjs pls_integer := sortedobjs.count;
-
-
-      function has_dep (
-         pa varchar2,
-         pb varchar2
+      type sort_tab is
+         table of sort_rec index by pls_integer;
+      v_sort sort_tab;
+      v_temp sort_rec;
+      n      pls_integer := v_sorted_tables.count;
+        
+        -- проверка завис ли табл а от б
+      function has_dependency (
+         a varchar2,
+         b varchar2
       ) return boolean is
       begin
-         for k in 1..fkdeps.count loop
+         for i in 1..v_dependencies.count loop
             if
-               fkdeps(k).table_name = pa
-               and fkdeps(k).depends_on = pb
+               v_dependencies(i).table_name = a
+               and v_dependencies(i).depends_on = b
             then
                return true;
             end if;
@@ -179,147 +160,141 @@ create or replace procedure sync_schema_structures (
       end;
 
    begin
-      for i in 1..totalobjs loop
-         sortdata(i).name := sortedobjs(i).tbl_name;
-         sortdata(i).cycle_flag := sortedobjs(i).cyclic;
-         sortdata(i).depcount := 0;
-         for j in 1..fkdeps.count loop
-            if fkdeps(j).table_name = sortedobjs(i).tbl_name then
-               sortdata(i).depcount := sortdata(i).depcount + 1;
+        -- заполн массива v_sort
+      for i in 1..n loop
+         v_sort(i).object_name := v_sorted_tables(i).object_name;
+         v_sort(i).has_cycle := v_sorted_tables(i).has_cycle;
+         v_sort(i).dep_count := 0;
+         for j in 1..v_dependencies.count loop
+            if v_dependencies(j).table_name = v_sorted_tables(i).object_name then
+               v_sort(i).dep_count := v_sort(i).dep_count + 1; -- подсчет кол-ва завис для кажд таблицы
             end if;
          end loop;
       end loop;
 
-
-      for i in 1..totalobjs - 1 loop
-         for j in i + 1..totalobjs loop
-            if sortdata(i).cycle_flag = sortdata(j).cycle_flag then
-               if not sortdata(i).cycle_flag then
-                  if sortdata(i).depcount > sortdata(j).depcount then
-                     temprec := sortdata(i);
-                     sortdata(i) := sortdata(j);
-                     sortdata(j) := temprec;
-                  elsif sortdata(i).depcount = sortdata(j).depcount then
-                     if has_dep(
-                        sortdata(i).name,
-                        sortdata(j).name
-                     ) then
-                        temprec := sortdata(i);
-                        sortdata(i) := sortdata(j);
-                        sortdata(j) := temprec;
+      for i in 1..n - 1 loop
+         for j in i + 1..n loop
+            if v_sort(i).has_cycle = v_sort(j).has_cycle then -- чекнем одиаковый ли статус с циклами
+               if v_sort(i).has_cycle = false then --если без цикла то по зависимстям
+                  if v_sort(i).dep_count > v_sort(j).dep_count then
+                     v_temp := v_sort(i);
+                     v_sort(i) := v_sort(j);
+                     v_sort(j) := v_temp;
+                  elsif v_sort(i).dep_count = v_sort(j).dep_count then
+                     if has_dependency(
+                        v_sort(i).object_name,
+                        v_sort(j).object_name
+                     ) then  -- если табл v_sort(i) завис от v_sort(j) то v_sort(j) будет раньше
+                        v_temp := v_sort(i);
+                        v_sort(i) := v_sort(j);
+                        v_sort(j) := v_temp;
                      end if;
                   end if;
                else
-                  if sortdata(i).depcount < sortdata(j).depcount then
-                     temprec := sortdata(i);
-                     sortdata(i) := sortdata(j);
-                     sortdata(j) := temprec;
+                  if v_sort(i).dep_count < v_sort(j).dep_count then -- по убыванию в случае циклов
+                     v_temp := v_sort(i);
+                     v_sort(i) := v_sort(j);
+                     v_sort(j) := v_temp;
                   end if;
                end if;
             elsif
-               sortdata(i).cycle_flag
-               and ( not sortdata(j).cycle_flag )
-            then
-               temprec := sortdata(i);
-               sortdata(i) := sortdata(j);
-               sortdata(j) := temprec;
+               v_sort(i).has_cycle = true
+               and v_sort(j).has_cycle = false
+            then --то табл без цикла раньше чем с
+               v_temp := v_sort(i);
+               v_sort(i) := v_sort(j);
+               v_sort(j) := v_temp;
             end if;
          end loop;
       end loop;
 
-
-      sortedobjs.delete;
-      for i in 1..totalobjs loop
-         sortedobjs.extend;
-         sortedobjs(sortedobjs.last) := t_obj_rec(
-            sortdata(i).name,
-            sortdata(i).cycle_flag
+      v_sorted_tables.delete;
+      for i in 1..n loop
+         v_sorted_tables.extend;
+         v_sorted_tables(v_sorted_tables.last) := table_rec(
+            v_sort(i).object_name,
+            v_sort(i).has_cycle
          );
       end loop;
-   end refine_order;
+   end sort_tables;
+
 
 begin
    select count(*)
-     into cnt_src_schema
+     into v_count
      from all_users
-    where username = upper(p_source_schema);
-   if cnt_src_schema = 0 then
+    where username = upper(dev_schema_name);
+   if v_count = 0 then
       raise_application_error(
          -20001,
-         'Схема-источник '
-         || p_source_schema
-         || ' не найдена.'
+         'Schema: '
+         || dev_schema_name
+         || ' is missing!'
       );
    end if;
 
    select count(*)
-     into cnt_tgt_schema
+     into v_count
      from all_users
-    where username = upper(p_target_schema);
-   if cnt_tgt_schema = 0 then
+    where username = upper(prod_schema_name);
+   if v_count = 0 then
       raise_application_error(
          -20002,
-         'Целевая схема '
-         || p_target_schema
-         || ' не найдена.'
+         'Schema: '
+         || prod_schema_name
+         || ' is missing!'
       );
    end if;
-
-
+    
+    -- сбор зависимостей по внеш ключам
    select dep_rec(
       table_name,
       referenced_table_name
    )
    bulk collect
-     into fkdeps
+     into v_dependencies
      from (
-      select distinct ac.table_name,
-                      ac2.table_name as referenced_table_name
+      select distinct ac.table_name, -- табл которая содер внеш ключ
+                      ac2.table_name as referenced_table_name -- имя табл на которую ссылается внешний ключ
         from all_constraints ac
         join all_cons_columns acc
       on ac.constraint_name = acc.constraint_name
          and ac.owner = acc.owner
+        --ac.r_constraint_name — внеш ключ в одной таблице (имя родительского ограничения на кот ссылается текущ огран)
+        --ac2.constraint_name — первичный ключ в другой таблице
         join all_constraints ac2
       on ac.r_constraint_name = ac2.constraint_name
          and ac2.owner = ac.owner
-       where ac.owner = upper(p_source_schema)
+       where ac.owner = upper(dev_schema_name)
          and ac.constraint_type = 'R'
-   );
+   ); -- информация, на что ссылается внешн ключ в текущ табл
 
-   dbms_output.put_line(chr(10)
-                        || '<<< Таблицы для обновления/создания в схеме '
-                        || upper(p_target_schema)
-                        || ' >>>');
-   for rec in cur_missing_diff loop
-      dbms_output.put_line('Обнаружена: ' || rec.table_name);
+   dbms_output.put_line('Diff/Prod difference:');
+   for rec in object_diff_to_prod loop
+      dbms_output.put_line('# TABLE ' || rec.object_name);
    end loop;
 
-
-   perform_topology_sort;
-   refine_order;
-   dbms_output.put_line(chr(10)
-                        || '<<< Генерация DDL-скриптов >>>');
-   for idx in 1..sortedobjs.count loop
-      dbms_output.put_line('### Обрабатываем таблицу: '
-                           || sortedobjs(idx).tbl_name
-                           || case
-         when sortedobjs(idx).cyclic then
-            ' [имеет циклическую зависимость]'
-         else ''
-      end);
-      dbms_output.put_line('!! Выполняется удаление: DROP TABLE "'
-                           || upper(p_target_schema)
+   topological_sort;
+   sort_tables;
+    
+    -- генерим DDL для таблиц
+   for i in 1..v_sorted_tables.count loop
+      if v_sorted_tables(i).has_cycle then
+         dbms_output.put_line('Cyclic Reference:' || v_sorted_tables(i).object_name);
+      end if;
+      dbms_output.put_line('DROP TABLE "'
+                           || upper(prod_schema_name)
                            || '"."'
-                           || sortedobjs(idx).tbl_name
+                           || v_sorted_tables(i).object_name
                            || '";');
 
-      ddl_script := 'CREATE TABLE "'
-                    || upper(p_target_schema)
-                    || '"."'
-                    || sortedobjs(idx).tbl_name
-                    || '" ('
-                    || chr(10);
-      for colrec in (
+      v_ddl := 'CREATE TABLE "'
+               || upper(prod_schema_name)
+               || '"."'
+               || v_sorted_tables(i).object_name
+               || '" ('
+               || chr(10);
+      for col in (
          select column_name,
                 data_type,
                 data_length,
@@ -327,174 +302,167 @@ begin
                 data_scale,
                 nullable
            from all_tab_columns
-          where owner = upper(p_source_schema)
-            and table_name = sortedobjs(idx).tbl_name
+          where owner = upper(dev_schema_name)
+            and table_name = v_sorted_tables(i).object_name
           order by column_id
       ) loop
-         ddl_script := ddl_script
-                       || '    "'
-                       || colrec.column_name
-                       || '" '
-                       || colrec.data_type;
-         if colrec.data_type in ( 'VARCHAR2',
-                                  'CHAR' ) then
-            ddl_script := ddl_script
-                          || '('
-                          || colrec.data_length
-                          || ')';
+         v_ddl := v_ddl
+                  || '    "'
+                  || col.column_name
+                  || '" '
+                  || col.data_type;
+         if col.data_type in ( 'VARCHAR2',
+                               'CHAR' ) then
+            v_ddl := v_ddl
+                     || '('
+                     || col.data_length
+                     || ')';
          elsif
-            colrec.data_type = 'NUMBER'
-            and colrec.data_precision is not null
+            col.data_type = 'NUMBER'
+            and col.data_precision is not null
          then
-            ddl_script := ddl_script
-                          || '('
-                          || colrec.data_precision
-                          || ','
-                          || nvl(
-               colrec.data_scale,
+            v_ddl := v_ddl
+                     || '('
+                     || col.data_precision
+                     || ','
+                     || nvl(
+               col.data_scale,
                0
             )
-                          || ')';
+                     || ')';
          end if;
-         if colrec.nullable = 'N' then
-            ddl_script := ddl_script || ' NOT NULL';
+         if col.nullable = 'N' then
+            v_ddl := v_ddl || ' NOT NULL';
          end if;
-         ddl_script := ddl_script
-                       || ','
-                       || chr(10);
+         v_ddl := v_ddl
+                  || ','
+                  || chr(10);
       end loop;
-
-
-      for consrec in (
+        -- генерация ограничений (pk fk)
+      for cons in (
          select constraint_name,
                 constraint_type,
                 r_owner,
                 r_constraint_name
            from all_constraints
-          where owner = upper(p_source_schema)
-            and table_name = sortedobjs(idx).tbl_name
+          where owner = upper(dev_schema_name)
+            and table_name = v_sorted_tables(i).object_name
             and constraint_type in ( 'P',
                                      'R' )
           order by constraint_type desc
       ) loop
-         ddl_script := ddl_script
-                       || '    CONSTRAINT "'
-                       || consrec.constraint_name
-                       || '" ';
-         if consrec.constraint_type = 'P' then
-            ddl_script := ddl_script || 'PRIMARY KEY (';
-            for colcons in (
+         v_ddl := v_ddl
+                  || '    CONSTRAINT "'
+                  || cons.constraint_name
+                  || '" ';
+         if cons.constraint_type = 'P' then
+            v_ddl := v_ddl || 'PRIMARY KEY (';
+            for col in (
                select column_name
                  from all_cons_columns
-                where owner = upper(p_source_schema)
-                  and constraint_name = consrec.constraint_name
+                where owner = upper(dev_schema_name)
+                  and constraint_name = cons.constraint_name
                 order by position
             ) loop
-               ddl_script := ddl_script
-                             || '"'
-                             || colcons.column_name
-                             || '",';
+               v_ddl := v_ddl
+                        || '"'
+                        || col.column_name
+                        || '",';
             end loop;
-            ddl_script := rtrim(
-               ddl_script,
+            v_ddl := rtrim(
+               v_ddl,
                ','
             )
-                          || ')';
-         elsif consrec.constraint_type = 'R' then
-            ddl_script := ddl_script || 'FOREIGN KEY (';
-            for colcons in (
+                     || ')';
+         elsif cons.constraint_type = 'R' then
+            v_ddl := v_ddl || 'FOREIGN KEY (';
+            for col in (
                select column_name
                  from all_cons_columns
-                where owner = upper(p_source_schema)
-                  and constraint_name = consrec.constraint_name
+                where owner = upper(dev_schema_name)
+                  and constraint_name = cons.constraint_name
                 order by position
             ) loop
-               ddl_script := ddl_script
-                             || '"'
-                             || colcons.column_name
-                             || '",';
+               v_ddl := v_ddl
+                        || '"'
+                        || col.column_name
+                        || '",';
             end loop;
-            ddl_script := rtrim(
-               ddl_script,
+            v_ddl := rtrim(
+               v_ddl,
                ','
             )
-                          || ') REFERENCES "'
-                          || upper(p_target_schema)
-                          || '"."';
+                     || ') REFERENCES "'
+                     || upper(prod_schema_name)
+                     || '"."';
             declare
-               ref_tbl varchar2(128);
+               v_ref_table varchar2(128);
             begin
                select table_name
-                 into ref_tbl
+                 into v_ref_table
                  from all_constraints
-                where owner = consrec.r_owner
-                  and constraint_name = consrec.r_constraint_name
+                where owner = cons.r_owner
+                  and constraint_name = cons.r_constraint_name
                   and rownum = 1;
-               ddl_script := ddl_script
-                             || ref_tbl
-                             || '" (';
-               for refcol in (
+               v_ddl := v_ddl
+                        || v_ref_table
+                        || '" (';
+               for col in (
                   select column_name
                     from all_cons_columns
-                   where owner = consrec.r_owner
-                     and constraint_name = consrec.r_constraint_name
+                   where owner = cons.r_owner
+                     and constraint_name = cons.r_constraint_name
                    order by position
                ) loop
-                  ddl_script := ddl_script
-                                || '"'
-                                || refcol.column_name
-                                || '",';
+                  v_ddl := v_ddl
+                           || '"'
+                           || col.column_name
+                           || '",';
                end loop;
-               ddl_script := rtrim(
-                  ddl_script,
+               v_ddl := rtrim(
+                  v_ddl,
                   ','
                )
-                             || ')';
+                        || ')'; -- лишнюю запятую скипаем
             exception
                when no_data_found then
                   null;
             end;
          end if;
-         ddl_script := ddl_script
-                       || ','
-                       || chr(10);
+         v_ddl := v_ddl
+                  || ','
+                  || chr(10);
       end loop;
 
-      ddl_script := rtrim(
-         ddl_script,
+      v_ddl := rtrim(
+         v_ddl,
          ',' || chr(10)
       )
-                    || chr(10)
-                    || ');';
-      dbms_output.put_line(ddl_script);
+               || chr(10)
+               || ');';
+      dbms_output.put_line(v_ddl);
       dbms_output.put_line('/');
    end loop;
-
-   dbms_output.put_line(chr(10)
-                        || '<<< Скрипты на удаление устаревших таблиц >>>');
-   for recextra in cur_extra_objs loop
-      dbms_output.put_line('!! Удалить: DROP TABLE "'
-                           || upper(p_target_schema)
+    
+    --дроп тех, что нет в деве
+   for rec in object_diff_to_drop loop
+      dbms_output.put_line('DROP TABLE "'
+                           || upper(prod_schema_name)
                            || '"."'
-                           || recextra.table_name
+                           || rec.object_name
                            || '";');
    end loop;
-
-   dbms_output.put_line(chr(10)
-                        || '### Синхронизация схем завершена ###');
 exception
    when others then
-      dbms_output.put_line('*** Ошибка: ' || sqlerrm);
+      dbms_output.put_line('Error: ' || sqlerrm);
       raise;
-end sync_schema_structures;
+end sync_database;
 /
-commit;
 
 
 begin
-   sync_schema_structures(
+   sync_database(
       'developer',
       'production'
    );
 end;
-/

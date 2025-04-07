@@ -3,180 +3,217 @@ CREATE OR REPLACE PROCEDURE GENERATE_SYNC_SCRIPT(
     p_prod_schema VARCHAR2
 ) AUTHID CURRENT_USER IS
 
-    -- Вспомогательная функция для сравнения исходного кода
     FUNCTION OBJECTS_DIFFERENT(
         p_object_name VARCHAR2,
         p_object_type VARCHAR2
     ) RETURN BOOLEAN IS
-        v_dev_count NUMBER;
-        v_prod_count NUMBER;
+        v_dev_ddl  CLOB;
+        v_prod_ddl CLOB;
     BEGIN
-        -- Сравнение количества строк
-        SELECT COUNT(*) INTO v_dev_count
-        FROM all_source
-        WHERE owner = p_dev_schema
-          AND name = p_object_name
-          AND type = p_object_type;
+        -- ddl для дева
+        BEGIN
+            SELECT DBMS_METADATA.GET_DDL(p_object_type, p_object_name, p_dev_schema)
+            INTO v_dev_ddl
+            FROM DUAL;
+        EXCEPTION
+            WHEN OTHERS THEN 
+                RETURN TRUE;
+        END;
+        -- аналогчно прод
+        BEGIN
+            SELECT DBMS_METADATA.GET_DDL(p_object_type, p_object_name, p_prod_schema)
+            INTO v_prod_ddl
+            FROM DUAL;
+        EXCEPTION
+            WHEN OTHERS THEN
+                RETURN TRUE;
+        END;
 
-        SELECT COUNT(*) INTO v_prod_count
-        FROM all_source
-        WHERE owner = p_prod_schema
-          AND name = p_object_name
-          AND type = p_object_type;
+        v_dev_ddl := REPLACE(v_dev_ddl, 'EDITIONABLE ', '');
+        v_prod_ddl := REPLACE(v_prod_ddl, 'EDITIONABLE ', '');
 
-        IF v_dev_count != v_prod_count THEN
-            RETURN TRUE;
-        END IF;
+        RETURN v_dev_ddl <> v_prod_ddl;
+    END;
 
-        -- Построчное сравнение кода
-        FOR r_dev IN (
-            SELECT text FROM all_source
+    PROCEDURE PROCESS_OBJECTS(
+        p_object_type VARCHAR2
+    ) IS
+    BEGIN
+        DBMS_OUTPUT.PUT_LINE(CHR(10) || '/* ' || p_object_type || ' DIFFERENCES */');
+        --новые объекты (есть в деве, нет в проде)
+        FOR obj IN (
+            SELECT object_name
+            FROM all_objects
             WHERE owner = p_dev_schema
-              AND name = p_object_name
-              AND type = p_object_type
-            ORDER BY line
+                AND object_type = p_object_type
+                AND object_name NOT IN (
+                    SELECT object_name 
+                    FROM all_objects 
+                    WHERE owner = p_prod_schema 
+                        AND object_type = p_object_type
+                )
         ) LOOP
-            FOR r_prod IN (
-                SELECT text FROM all_source
-                WHERE owner = p_prod_schema
-                  AND name = p_object_name
-                  AND type = p_object_type
-                ORDER BY line
-            ) LOOP
-                IF r_dev.text != r_prod.text THEN
-                    RETURN TRUE;
-                END IF;
-            END LOOP;
+            DBMS_OUTPUT.PUT_LINE('-- Create ' || p_object_type || ': ' || obj.object_name);
+            DBMS_OUTPUT.PUT_LINE(
+                REPLACE(
+                    DBMS_METADATA.GET_DDL(p_object_type, obj.object_name, p_dev_schema),
+                    '"' || p_dev_schema || '"',
+                    '"' || p_prod_schema || '"'
+                ) || '/'
+            );
         END LOOP;
 
-        RETURN FALSE;
-    EXCEPTION
-        WHEN NO_DATA_FOUND THEN
-            RETURN TRUE;
+        -- измененнные объекты - есть двух схемах, но DDL разл
+        FOR obj IN (
+            SELECT object_name
+            FROM all_objects
+            WHERE owner = p_dev_schema
+                AND object_type = p_object_type
+                AND object_name IN (
+                    SELECT object_name 
+                    FROM all_objects 
+                    WHERE owner = p_prod_schema 
+                        AND object_type = p_object_type
+                )
+        ) LOOP
+            IF OBJECTS_DIFFERENT(obj.object_name, p_object_type) THEN
+                DBMS_OUTPUT.PUT_LINE('-- Update ' || p_object_type || ': ' || obj.object_name);
+                DBMS_OUTPUT.PUT_LINE(
+                    REPLACE(
+                        DBMS_METADATA.GET_DDL(p_object_type, obj.object_name, p_dev_schema),
+                        '"' || p_dev_schema || '"',
+                        '"' || p_prod_schema || '"'
+                    ) || '/'
+                );
+            END IF;
+        END LOOP;
+
+        -- есть на проде и нет в деве
+        FOR obj IN (
+            SELECT object_name
+            FROM all_objects
+            WHERE owner = p_prod_schema
+                AND object_type = p_object_type
+                AND object_name NOT IN (
+                    SELECT object_name 
+                    FROM all_objects 
+                    WHERE owner = p_dev_schema 
+                        AND object_type = p_object_type
+                )
+        ) LOOP
+            DBMS_OUTPUT.PUT_LINE('DROP ' || p_object_type || ' ' || p_prod_schema || '.' || obj.object_name || ';');
+        END LOOP;
     END;
 
 BEGIN
-    DBMS_OUTPUT.PUT_LINE('-- Schema synchronization script');
-    DBMS_OUTPUT.PUT_LINE('-- Generated: ' || TO_CHAR(SYSDATE, 'YYYY-MM-DD HH24:MI:SS'));
-    DBMS_OUTPUT.PUT_LINE('-- Source schema: ' || p_dev_schema);
-    DBMS_OUTPUT.PUT_LINE('-- Target schema: ' || p_prod_schema);
-    DBMS_OUTPUT.PUT_LINE('--------------------------------------------------');
-    -- Indexes Section
-    DBMS_OUTPUT.PUT_LINE(CHR(10) || '/* INDEX DIFFERENCES */');
-    -- New indexes
-    FOR idx IN (
-        SELECT 
-            i.index_name, 
-            i.table_name, 
-            i.uniqueness, 
-            LISTAGG(c.column_name, ', ') WITHIN GROUP (ORDER BY c.column_position) AS idx_columns -- Переименован алиас
-        FROM all_indexes i
-        JOIN all_ind_columns c 
-            ON i.owner = c.index_owner 
-            AND i.index_name = c.index_name
-        WHERE i.owner = p_dev_schema
-        AND i.index_name NOT LIKE '%_PK'
-        AND i.index_name NOT IN (
-            SELECT index_name 
-            FROM all_indexes 
-            WHERE owner = p_prod_schema
-        )
-        GROUP BY i.index_name, i.table_name, i.uniqueness
-    ) LOOP
-        DBMS_OUTPUT.PUT_LINE('CREATE ' || idx.uniqueness || ' INDEX ' || p_prod_schema || '.' || idx.index_name
-            || ' ON ' || p_prod_schema || '.' || idx.table_name || '(' || idx.idx_columns || ');'); -- Исправлен алиас
-    END LOOP;
-
-    -- Obsolete indexes
-    FOR idx IN (
-        SELECT index_name
-        FROM all_indexes
-        WHERE owner = p_prod_schema
-          AND index_name NOT LIKE '%_PK'
-          AND index_name NOT IN (
-              SELECT index_name FROM all_indexes WHERE owner = p_dev_schema
-          )
-    ) LOOP
-        DBMS_OUTPUT.PUT_LINE('DROP INDEX ' || p_prod_schema || '.' || idx.index_name || ';');
-    END LOOP;
-
-    -- Procedures Section
-    DBMS_OUTPUT.PUT_LINE(CHR(10) || '/* PROCEDURE DIFFERENCES */');
-    -- New procedures
-    FOR obj IN (
-        SELECT object_name
-        FROM all_objects
-        WHERE owner = p_dev_schema
-          AND object_type = 'PROCEDURE'
-          AND object_name NOT IN (
-              SELECT object_name FROM all_objects 
-              WHERE owner = p_prod_schema AND object_type = 'PROCEDURE'
-          )
-    ) LOOP
-        DBMS_OUTPUT.PUT_LINE('-- Create procedure: ' || obj.object_name);
-        DBMS_OUTPUT.PUT_LINE('CREATE OR REPLACE ');
-        FOR src IN (
-            SELECT text
-            FROM all_source
-            WHERE owner = p_dev_schema
-              AND name = obj.object_name
-              AND type = 'PROCEDURE'
-            ORDER BY line
-        ) LOOP
-            DBMS_OUTPUT.PUT_LINE(src.text);
-        END LOOP;
-        DBMS_OUTPUT.PUT_LINE('/');
-    END LOOP;
-
-    -- Changed procedures
-    FOR obj IN (
-        SELECT object_name
-        FROM all_objects
-        WHERE owner = p_dev_schema
-          AND object_type = 'PROCEDURE'
-          AND object_name IN (
-              SELECT object_name FROM all_objects 
-              WHERE owner = p_prod_schema AND object_type = 'PROCEDURE'
-          )
-    ) LOOP
-        IF OBJECTS_DIFFERENT(obj.object_name, 'PROCEDURE') THEN
-            DBMS_OUTPUT.PUT_LINE('-- Replace procedure: ' || obj.object_name);
-            DBMS_OUTPUT.PUT_LINE('DROP PROCEDURE ' || p_prod_schema || '.' || obj.object_name || ';');
-            DBMS_OUTPUT.PUT_LINE('CREATE OR REPLACE ');
-            FOR src IN (
-                SELECT text
-                FROM all_source
-                WHERE owner = p_dev_schema
-                  AND name = obj.object_name
-                  AND type = 'PROCEDURE'
-                ORDER BY line
-            ) LOOP
-                DBMS_OUTPUT.PUT_LINE(src.text);
-            END LOOP;
-            DBMS_OUTPUT.PUT_LINE('/');
-        END IF;
-    END LOOP;
-
-    -- Obsolete procedures
-    FOR obj IN (
-        SELECT object_name
-        FROM all_objects
-        WHERE owner = p_prod_schema
-          AND object_type = 'PROCEDURE'
-          AND object_name NOT IN (
-              SELECT object_name FROM all_objects 
-              WHERE owner = p_dev_schema AND object_type = 'PROCEDURE'
-          )
-    ) LOOP
-        DBMS_OUTPUT.PUT_LINE('DROP PROCEDURE ' || p_prod_schema || '.' || obj.object_name || ';');
-    END LOOP;
-
-    -- Repeat similar logic for FUNCTIONS...
-
-    DBMS_OUTPUT.PUT_LINE(CHR(10) || '-- End of synchronization script');
-    DBMS_OUTPUT.PUT_LINE('--------------------------------------------------');
+    DBMS_OUTPUT.PUT_LINE('======================================================');
+    DBMS_OUTPUT.PUT_LINE('======================================================');
+    PROCESS_OBJECTS('PROCEDURE');
+    PROCESS_OBJECTS('FUNCTION');
+   DBMS_OUTPUT.PUT_LINE('======================================================');
+   DBMS_OUTPUT.PUT_LINE('======================================================');
 EXCEPTION
     WHEN OTHERS THEN
         DBMS_OUTPUT.PUT_LINE('Error generating script: ' || SQLERRM);
 END;
 /
+
+begin
+   generate_sync_script(
+      'developer',
+      'production'
+   );
+end;
+/
+
+create or replace procedure developer.executestepone (
+   inputparam int
+) is
+begin
+   dbms_output.put_line('Input value: ' || to_char(inputparam));
+end;
+/
+
+create or replace procedure production.executestepone (
+   input varchar
+) is
+begin
+   dbms_output.put_line(input);
+end;
+/
+create or replace procedure developer.performactiontwo (
+   msg varchar2
+) is
+begin
+   dbms_output.put_line(msg);
+end;
+/
+create or replace procedure production.performactiontwo (
+   msg varchar2
+) is
+begin
+   dbms_output.put_line(msg);
+   dbms_output.put_line(msg);
+end;
+/
+create or replace procedure developer.handlestepthree (
+   data varchar2
+) is
+begin
+   dbms_output.put_line(data);
+end;
+/
+create or replace procedure production.specialoperation (
+   param varchar2
+) is
+begin
+   dbms_output.put_line(param);
+end;
+/
+create or replace procedure developer.testproc (
+   data varchar2
+) is
+begin
+   dbms_output.put_line(data);
+end;
+/
+create or replace function developer.calculatevalue (
+   inputdata varchar2
+) return number is
+begin
+   dbms_output.put_line(inputdata);
+   return 5;
+end;
+/
+
+create table developer.testagain (
+   test_id  number not null,
+   test_str varchar2(59) not null
+);
+
+create table developer.t1 (
+   id number(10) primary key not null
+);
+create table developer.t2 (
+   id number(10) primary key not null
+);
+create table developer.t3 (
+   id number(10) primary key not null
+);
+
+drop table developer.t1 cascade constraints;
+drop table developer.t3;
+drop table developer.t2;
+
+-- t1->t3->t2
+
+alter table developer.t1 add c1 number(20)
+   constraint tab1_c1_fk
+      references developer.t3 ( id );
+alter table developer.t3 add c1 number(20)
+   constraint tab3_c1_fk
+      references developer.t2 ( id )
+/
+
+
+      commit;

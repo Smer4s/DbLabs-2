@@ -269,7 +269,10 @@ begin
          and ac.constraint_type = 'R'
    ); -- информация, на что ссылается внешн ключ в текущ табл
 
-   dbms_output.put_line('Diff/Prod difference:');
+   dbms_output.put_line(dev_schema_name
+                        || '/'
+                        || prod_schema_name
+                        || ' difference:');
    for rec in object_diff_to_prod loop
       dbms_output.put_line('# TABLE ' || rec.object_name);
    end loop;
@@ -278,6 +281,13 @@ begin
    sort_tables;
     
     -- генерим DDL для таблиц
+
+   dbms_output.put_line('');
+   dbms_output.put_line('DDL scrypt for sync '
+                        || dev_schema_name
+                        || ' and '
+                        || prod_schema_name
+                        || ':');
    for i in 1..v_sorted_tables.count loop
       if v_sorted_tables(i).has_cycle then
          dbms_output.put_line('Cyclic Reference:' || v_sorted_tables(i).object_name);

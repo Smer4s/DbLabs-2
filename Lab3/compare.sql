@@ -1,121 +1,170 @@
-CREATE OR REPLACE PROCEDURE GENERATE_SYNC_SCRIPT(
-    p_dev_schema VARCHAR2,
-    p_prod_schema VARCHAR2
-) AUTHID CURRENT_USER IS
+create or replace procedure generate_sync_script (
+   p_dev_schema  varchar2,
+   p_prod_schema varchar2
+)
+   authid current_user
+is
 
-    FUNCTION OBJECTS_DIFFERENT(
-        p_object_name VARCHAR2,
-        p_object_type VARCHAR2
-    ) RETURN BOOLEAN IS
-        v_dev_ddl  CLOB;
-        v_prod_ddl CLOB;
-    BEGIN
+   function objects_different (
+      p_object_name varchar2,
+      p_object_type varchar2
+   ) return boolean is
+      v_dev_ddl  clob;
+      v_prod_ddl clob;
+   begin
         -- ddl для дева
-        BEGIN
-            SELECT DBMS_METADATA.GET_DDL(p_object_type, p_object_name, p_dev_schema)
-            INTO v_dev_ddl
-            FROM DUAL;
-        EXCEPTION
-            WHEN OTHERS THEN 
-                RETURN TRUE;
-        END;
+      begin
+         select dbms_metadata.get_ddl(
+            p_object_type,
+            p_object_name,
+            p_dev_schema
+         )
+           into v_dev_ddl
+           from dual;
+      exception
+         when others then
+            return true;
+      end;
         -- аналогчно прод
-        BEGIN
-            SELECT DBMS_METADATA.GET_DDL(p_object_type, p_object_name, p_prod_schema)
-            INTO v_prod_ddl
-            FROM DUAL;
-        EXCEPTION
-            WHEN OTHERS THEN
-                RETURN TRUE;
-        END;
+      begin
+         select dbms_metadata.get_ddl(
+            p_object_type,
+            p_object_name,
+            p_prod_schema
+         )
+           into v_prod_ddl
+           from dual;
+      exception
+         when others then
+            return true;
+      end;
 
-        v_dev_ddl := REPLACE(v_dev_ddl, 'EDITIONABLE ', '');
-        v_prod_ddl := REPLACE(v_prod_ddl, 'EDITIONABLE ', '');
+      v_dev_ddl := replace(
+         v_dev_ddl,
+         'EDITIONABLE ',
+         ''
+      );
+      v_prod_ddl := replace(
+         v_prod_ddl,
+         'EDITIONABLE ',
+         ''
+      );
+      return v_dev_ddl <> v_prod_ddl;
+   end;
 
-        RETURN v_dev_ddl <> v_prod_ddl;
-    END;
-
-    PROCEDURE PROCESS_OBJECTS(
-        p_object_type VARCHAR2
-    ) IS
-    BEGIN
-        DBMS_OUTPUT.PUT_LINE(CHR(10) || '/* ' || p_object_type || ' DIFFERENCES */');
+   procedure process_objects (
+      p_object_type varchar2
+   ) is
+   begin
+      dbms_output.put_line(chr(10)
+                           || '/* '
+                           || p_object_type
+                           || ' DIFFERENCES */');
         --новые объекты (есть в деве, нет в проде)
-        FOR obj IN (
-            SELECT object_name
-            FROM all_objects
-            WHERE owner = p_dev_schema
-                AND object_type = p_object_type
-                AND object_name NOT IN (
-                    SELECT object_name 
-                    FROM all_objects 
-                    WHERE owner = p_prod_schema 
-                        AND object_type = p_object_type
-                )
-        ) LOOP
-            DBMS_OUTPUT.PUT_LINE('-- Create ' || p_object_type || ': ' || obj.object_name);
-            DBMS_OUTPUT.PUT_LINE(
-                REPLACE(
-                    DBMS_METADATA.GET_DDL(p_object_type, obj.object_name, p_dev_schema),
-                    '"' || p_dev_schema || '"',
-                    '"' || p_prod_schema || '"'
-                ) || '/'
-            );
-        END LOOP;
+      for obj in (
+         select object_name
+           from all_objects
+          where owner = p_dev_schema
+            and object_type = p_object_type
+            and object_name not in (
+            select object_name
+              from all_objects
+             where owner = p_prod_schema
+               and object_type = p_object_type
+         )
+      ) loop
+         dbms_output.put_line('-- Create '
+                              || p_object_type
+                              || ': '
+                              || obj.object_name);
+         dbms_output.put_line(replace(
+            dbms_metadata.get_ddl(
+               p_object_type,
+               obj.object_name,
+               p_dev_schema
+            ),
+            '"'
+            || p_dev_schema
+            || '"',
+            '"'
+            || p_prod_schema
+            || '"'
+         )
+                              || '/');
+      end loop;
 
         -- измененнные объекты - есть двух схемах, но DDL разл
-        FOR obj IN (
-            SELECT object_name
-            FROM all_objects
-            WHERE owner = p_dev_schema
-                AND object_type = p_object_type
-                AND object_name IN (
-                    SELECT object_name 
-                    FROM all_objects 
-                    WHERE owner = p_prod_schema 
-                        AND object_type = p_object_type
-                )
-        ) LOOP
-            IF OBJECTS_DIFFERENT(obj.object_name, p_object_type) THEN
-                DBMS_OUTPUT.PUT_LINE('-- Update ' || p_object_type || ': ' || obj.object_name);
-                DBMS_OUTPUT.PUT_LINE(
-                    REPLACE(
-                        DBMS_METADATA.GET_DDL(p_object_type, obj.object_name, p_dev_schema),
-                        '"' || p_dev_schema || '"',
-                        '"' || p_prod_schema || '"'
-                    ) || '/'
-                );
-            END IF;
-        END LOOP;
+      for obj in (
+         select object_name
+           from all_objects
+          where owner = p_dev_schema
+            and object_type = p_object_type
+            and object_name in (
+            select object_name
+              from all_objects
+             where owner = p_prod_schema
+               and object_type = p_object_type
+         )
+      ) loop
+         if objects_different(
+            obj.object_name,
+            p_object_type
+         ) then
+            dbms_output.put_line('-- Update '
+                                 || p_object_type
+                                 || ': '
+                                 || obj.object_name);
+            dbms_output.put_line(replace(
+               dbms_metadata.get_ddl(
+                  p_object_type,
+                  obj.object_name,
+                  p_dev_schema
+               ),
+               '"'
+               || p_dev_schema
+               || '"',
+               '"'
+               || p_prod_schema
+               || '"'
+            )
+                                 || '/');
+         end if;
+      end loop;
 
         -- есть на проде и нет в деве
-        FOR obj IN (
-            SELECT object_name
-            FROM all_objects
-            WHERE owner = p_prod_schema
-                AND object_type = p_object_type
-                AND object_name NOT IN (
-                    SELECT object_name 
-                    FROM all_objects 
-                    WHERE owner = p_dev_schema 
-                        AND object_type = p_object_type
-                )
-        ) LOOP
-            DBMS_OUTPUT.PUT_LINE('DROP ' || p_object_type || ' ' || p_prod_schema || '.' || obj.object_name || ';');
-        END LOOP;
-    END;
+      for obj in (
+         select object_name
+           from all_objects
+          where owner = p_prod_schema
+            and object_type = p_object_type
+            and object_name not in (
+            select object_name
+              from all_objects
+             where owner = p_dev_schema
+               and object_type = p_object_type
+         )
+      ) loop
+         dbms_output.put_line('DROP '
+                              || p_object_type
+                              || ' '
+                              || p_prod_schema
+                              || '.'
+                              || obj.object_name
+                              || ';');
+      end loop;
+   end;
 
-BEGIN
-    DBMS_OUTPUT.PUT_LINE('======================================================');
-    DBMS_OUTPUT.PUT_LINE('======================================================');
-    PROCESS_OBJECTS('PROCEDURE');
-    PROCESS_OBJECTS('FUNCTION');
-   DBMS_OUTPUT.PUT_LINE('======================================================');
-   DBMS_OUTPUT.PUT_LINE('======================================================');
-EXCEPTION
-    WHEN OTHERS THEN
-        DBMS_OUTPUT.PUT_LINE('Error generating script: ' || SQLERRM);
-END;
+begin
+   dbms_output.put_line('======================================================');
+   dbms_output.put_line('======================================================');
+   process_objects('PROCEDURE');
+   process_objects('FUNCTION');
+   dbms_output.put_line('======================================================');
+   dbms_output.put_line('======================================================');
+exception
+   when others then
+      dbms_output.put_line('Error generating script: ' || sqlerrm);
+end;
 /
 
 begin
@@ -190,6 +239,7 @@ create table developer.testagain (
    test_id  number not null,
    test_str varchar2(59) not null
 );
+drop table developer.testagain;
 
 create table developer.t1 (
    id number(10) primary key not null
@@ -216,4 +266,4 @@ alter table developer.t3 add c1 number(20)
 /
 
 
-      commit;
+commit;

@@ -469,6 +469,7 @@ exception
 end sync_database;
 /
 
+drop procedure sync_database;
 
 begin
    sync_database(

@@ -1,12 +1,24 @@
-select * from employees;
+select *
+  from employees;
+
+select *
+  from test_table;
+
+commit;
+
+insert into employees (
+   name,
+   status
+) values ( 'Dave',
+           'ACTIVE' );
 
 
 declare
    l_json clob := '{
       "queryType": "INSERT",
-      "table": "employees",
-      "columns": ["id", "name", "status"],
-      "values": ["4", "''Dave''", "''ACTIVE''"]
+      "table": "test_table",
+      "columns": ["name"],
+      "values": ["''Dave''"]
    }';
 begin
    exec_dynamic_dml(p_json => l_json);

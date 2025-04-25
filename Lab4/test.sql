@@ -10,7 +10,21 @@ declare
       "filters": {
          "conditions": [
             {"column": "status", "operator": "=", "value": "''ACTIVE''"}
-         ]
+         ],
+         "nested": {
+            "type": "IN",
+            "column": "id",
+            "subquery": {
+               "queryType": "SELECT",
+               "columns": ["id"],
+               "tables": ["employees"],
+               "filters": {
+                  "conditions": [
+                     {"column": "name", "operator": "LIKE", "value": "''A%''"}
+                  ]
+               }
+            }
+         }
       }
    }';
 begin
@@ -18,7 +32,6 @@ begin
       p_json   => l_json,
       p_result => l_cursor
    );
-   
    loop
       fetch l_cursor into
          l_id,
@@ -27,9 +40,9 @@ begin
       exit when l_cursor%notfound;
       dbms_output.put_line('id: '
                            || l_id
-                           || ', name: '
+                           || ' | name: '
                            || l_name
-                           || ', status: '
+                           || ' | status: '
                            || l_status);
    end loop;
    close l_cursor;

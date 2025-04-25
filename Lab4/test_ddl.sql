@@ -1,6 +1,6 @@
 select table_name
   from user_tables
- where table_name = upper('test_table');
+ where table_name = upper('my_table');
 /
 
 insert into test_table ( name ) values ( 'TEST' );
@@ -18,12 +18,12 @@ grant
 to system;
 
 select *
-  from test_table;
+  from my_table;
 
 declare
    l_json clob := '{
        "queryType": "CREATE_TABLE",
-       "tableName": "test_table_1",
+       "tableName": "my_table",
        "fields": [
            {"name": "id", "type": "NUMBER", "constraints": "PRIMARY KEY"},
            {"name": "name", "type": "VARCHAR2(100)"}

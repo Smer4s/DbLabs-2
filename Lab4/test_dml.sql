@@ -2,7 +2,7 @@ select *
   from employees;
 
 select *
-  from test_table;
+  from my_table;
 
 commit;
 
@@ -16,9 +16,9 @@ insert into employees (
 declare
    l_json clob := '{
       "queryType": "INSERT",
-      "table": "test_table",
+      "table": "my_table",
       "columns": ["name"],
-      "values": ["''Dave''"]
+      "values": ["''Dave3''"]
    }';
 begin
    exec_dynamic_dml(p_json => l_json);

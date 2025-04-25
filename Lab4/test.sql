@@ -48,3 +48,16 @@ begin
    close l_cursor;
 end;
 /
+
+declare
+   l_json clob := '{
+      "queryType": "INSERT",
+      "table": "employees",
+      "columns": ["id", "name", "status"],
+      "values": ["4", "''Dave''", "''ACTIVE''"]
+   }';
+begin
+   exec_dynamic_dml(p_json => l_json);
+   dbms_output.put_line('INSERT выполнен успешно.');
+end;
+/

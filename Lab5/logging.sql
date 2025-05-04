@@ -17,13 +17,17 @@ create or replace trigger trg_customers_audit after
    insert or update or delete on customers
    for each row
 begin
+   if pkg_dml_rollback.g_disable_logging then
+      return;
+   end if;
    if inserting then
       insert into dml_log (
          log_id,
          table_name,
          operation,
          row_id,
-         new_data
+         new_data,
+         change_date
       ) values ( dml_log_seq.nextval,
                  'CUSTOMERS',
                  'INSERT',
@@ -34,7 +38,9 @@ begin
                  || to_char(
                     :new.registration_date,
                     'YYYY-MM-DD HH24:MI:SS'
-                 ) );
+                 ),
+                 systimestamp at time zone 'UTC' );
+
    elsif updating then
       insert into dml_log (
          log_id,
@@ -42,7 +48,8 @@ begin
          operation,
          row_id,
          old_data,
-         new_data
+         new_data,
+         change_date
       ) values ( dml_log_seq.nextval,
                  'CUSTOMERS',
                  'UPDATE',
@@ -60,14 +67,17 @@ begin
                  || to_char(
                     :new.registration_date,
                     'YYYY-MM-DD HH24:MI:SS'
-                 ) );
+                 ),
+                 systimestamp at time zone 'UTC' );
+
    elsif deleting then
       insert into dml_log (
          log_id,
          table_name,
          operation,
          row_id,
-         old_data
+         old_data,
+         change_date
       ) values ( dml_log_seq.nextval,
                  'CUSTOMERS',
                  'DELETE',
@@ -78,7 +88,8 @@ begin
                  || to_char(
                     :old.registration_date,
                     'YYYY-MM-DD HH24:MI:SS'
-                 ) );
+                 ),
+                 systimestamp at time zone 'UTC' );
    end if;
 end;
 /
@@ -87,13 +98,17 @@ create or replace trigger trg_payments_audit after
    insert or update or delete on payments
    for each row
 begin
+   if pkg_dml_rollback.g_disable_logging then
+      return;
+   end if;
    if inserting then
       insert into dml_log (
          log_id,
          table_name,
          operation,
          row_id,
-         new_data
+         new_data,
+         change_date
       ) values ( dml_log_seq.nextval,
                  'PAYMENTS',
                  'INSERT',
@@ -108,7 +123,9 @@ begin
                     'YYYY-MM-DD HH24:MI:SS'
                  )
                  || ', Amount='
-                 || to_char(:new.amount) );
+                 || to_char(:new.amount),
+                 systimestamp at time zone 'UTC' );
+
    elsif updating then
       insert into dml_log (
          log_id,
@@ -116,7 +133,8 @@ begin
          operation,
          row_id,
          old_data,
-         new_data
+         new_data,
+         change_date
       ) values ( dml_log_seq.nextval,
                  'PAYMENTS',
                  'UPDATE',
@@ -142,14 +160,17 @@ begin
                     'YYYY-MM-DD HH24:MI:SS'
                  )
                  || ', Amount='
-                 || to_char(:new.amount) );
+                 || to_char(:new.amount),
+                 systimestamp at time zone 'UTC' );
+
    elsif deleting then
       insert into dml_log (
          log_id,
          table_name,
          operation,
          row_id,
-         old_data
+         old_data,
+         change_date
       ) values ( dml_log_seq.nextval,
                  'PAYMENTS',
                  'DELETE',
@@ -164,22 +185,28 @@ begin
                     'YYYY-MM-DD HH24:MI:SS'
                  )
                  || ', Amount='
-                 || to_char(:old.amount) );
+                 || to_char(:old.amount),
+                 systimestamp at time zone 'UTC' );
    end if;
 end;
 /
+
 
 create or replace trigger trg_orders_audit after
    insert or update or delete on orders
    for each row
 begin
+   if pkg_dml_rollback.g_disable_logging then
+      return;
+   end if;
    if inserting then
       insert into dml_log (
          log_id,
          table_name,
          operation,
          row_id,
-         new_data
+         new_data,
+         change_date
       ) values ( dml_log_seq.nextval,
                  'ORDERS',
                  'INSERT',
@@ -194,7 +221,9 @@ begin
                     'YYYY-MM-DD HH24:MI:SS'
                  )
                  || ', Total='
-                 || to_char(:new.order_total) );
+                 || to_char(:new.order_total),
+                 systimestamp at time zone 'UTC' );
+
    elsif updating then
       insert into dml_log (
          log_id,
@@ -202,7 +231,8 @@ begin
          operation,
          row_id,
          old_data,
-         new_data
+         new_data,
+         change_date
       ) values ( dml_log_seq.nextval,
                  'ORDERS',
                  'UPDATE',
@@ -228,14 +258,17 @@ begin
                     'YYYY-MM-DD HH24:MI:SS'
                  )
                  || ', Total='
-                 || to_char(:new.order_total) );
+                 || to_char(:new.order_total),
+                 systimestamp at time zone 'UTC' );
+
    elsif deleting then
       insert into dml_log (
          log_id,
          table_name,
          operation,
          row_id,
-         old_data
+         old_data,
+         change_date
       ) values ( dml_log_seq.nextval,
                  'ORDERS',
                  'DELETE',
@@ -250,7 +283,8 @@ begin
                     'YYYY-MM-DD HH24:MI:SS'
                  )
                  || ', Total='
-                 || to_char(:old.order_total) );
+                 || to_char(:old.order_total),
+                 systimestamp at time zone 'UTC' );
    end if;
 end;
 /

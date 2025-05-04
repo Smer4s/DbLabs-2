@@ -3,10 +3,13 @@ create table dml_log (
    table_name  varchar2(50) not null,
    operation   varchar2(10) not null,
    row_id      varchar2(100) not null,
-   change_date date default sysdate,
+   change_date timestamp with time zone default ( systimestamp at time zone 'UTC' ) not null,
    old_data    clob,
    new_data    clob
 );
+
+
+drop table dml_log;
 
 create sequence dml_log_seq start with 1 increment by 1;
 

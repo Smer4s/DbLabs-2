@@ -1,7 +1,3 @@
-select *
-  from dml_log;
-commit;
-
 insert into customers (
    customer_id,
    customer_name,
@@ -17,8 +13,6 @@ insert into customers (
 ) values ( 2,
            'Петров',
            sysdate );
-
-commit;
 
 insert into orders (
    order_id,
@@ -43,8 +37,6 @@ insert into orders (
            'NEW',
            sysdate,
            500.75 );
-
-commit;
 
 insert into payments (
    payment_id,
@@ -92,14 +84,22 @@ commit;
 
 
 delete from payments
- where payment_id = 1001;
+ where payment_id = 1000;
 
 
 delete from orders
- where order_id = 101;
+ where order_id = 100;
 
 
 delete from customers
- where customer_id = 2;
+ where customer_id = 1;
 
 commit;
+
+
+select *
+  from customers;
+select *
+  from payments;
+select *
+  from orders;

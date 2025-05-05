@@ -452,7 +452,7 @@ select *
 select *
   from payments;
 select *
-  from orders;
+   from orders;
 
 delete from dml_log;
 commit;

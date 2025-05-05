@@ -2,7 +2,7 @@ insert into customers (
    customer_id,
    customer_name,
    registration_date
-) values ( 1,
+) values ( 9,
            'Иванов',
            sysdate );
 
@@ -32,7 +32,7 @@ insert into orders (
    order_status,
    order_date,
    order_total
-) values ( 101,
+) values ( 105,
            2,
            'NEW',
            sysdate,
@@ -44,7 +44,7 @@ insert into payments (
    payment_method,
    payment_date,
    amount
-) values ( 1000,
+) values ( 1003,
            100,
            'Credit Card',
            sysdate,

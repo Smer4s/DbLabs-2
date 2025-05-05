@@ -27,6 +27,8 @@ create or replace package body pkg_dml_report as
       else
          v_curr_date := pkg_dml_rollback.g_rollback_date;
       end if;
+
+      dbms_output.put_line(v_curr_date);
       v_html := '<html><head><meta charset="UTF-8"><title>Отчет изменений</title></head><body>'
                 || '<h2>Отчет изменений с '
                 || to_char(
@@ -386,7 +388,7 @@ select *
 
 
 begin
-   dbms_output.put_line('awd');
-   dbms_output.put_line(systimestamp);
+   dbms_output.put_line(pkg_dml_rollback.g_rollback_date);
 end;
 /
+

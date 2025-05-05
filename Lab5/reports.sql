@@ -1,16 +1,16 @@
 create or replace package pkg_dml_report as
-   g_last_report_date date := sysdate;
+   g_last_report_date timestamp with time zone := systimestamp;
    procedure generate_report (
-      p_start_date in date default null
+      p_start_date in timestamp with time zone default null
    );
 end pkg_dml_report;
 /
 create or replace package body pkg_dml_report as
    procedure generate_report (
-      p_start_date in date default null
+      p_start_date in timestamp with time zone default null
    ) is
-      v_start_date date;
-      v_curr_date  date;
+      v_start_date timestamp with time zone;
+      v_curr_date  timestamp with time zone;
       v_html       clob := '';
       v_ins        number;
       v_upd        number;
@@ -22,7 +22,7 @@ create or replace package body pkg_dml_report as
          v_start_date := p_start_date;
       end if;
 
-      v_curr_date := sysdate;
+      v_curr_date := systimestamp;
       v_html := '<html><head><meta charset="UTF-8"><title>Отчет изменений</title></head><body>'
                 || '<h2>Отчет изменений с '
                 || to_char(
@@ -364,5 +364,10 @@ end pkg_dml_report;
 begin
    pkg_dml_report.generate_report(to_date('2025-05-04 14:45:00',
                                   'YYYY-MM-DD HH24:MI:SS'));
+end;
+/
+
+begin
+   pkg_dml_report.generate_report;
 end;
 /

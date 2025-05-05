@@ -103,5 +103,3 @@ select *
   from payments;
 select *
   from orders;
-
-delete from payments where payment_id = 1001;

@@ -22,7 +22,11 @@ create or replace package body pkg_dml_report as
          v_start_date := p_start_date;
       end if;
 
-      v_curr_date := systimestamp;
+      if pkg_dml_rollback.g_rollback_date is null then
+         v_curr_date := systimestamp;
+      else
+         v_curr_date := pkg_dml_rollback.g_rollback_date;
+      end if;
       v_html := '<html><head><meta charset="UTF-8"><title>Отчет изменений</title></head><body>'
                 || '<h2>Отчет изменений с '
                 || to_char(
@@ -369,5 +373,20 @@ end;
 
 begin
    pkg_dml_report.generate_report;
+end;
+/
+
+
+select *
+  from customers;
+select *
+  from payments;
+select *
+  from orders;
+
+
+begin
+   dbms_output.put_line('awd');
+   dbms_output.put_line(systimestamp);
 end;
 /

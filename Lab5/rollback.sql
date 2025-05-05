@@ -1,5 +1,6 @@
 create or replace package pkg_dml_rollback as
    g_disable_logging boolean := false;
+   g_rollback_date timestamp with time zone := null;
    procedure rollback_changes (
       p_target_date in date
    );
@@ -96,9 +97,6 @@ create or replace package body pkg_dml_rollback as
          end if;
       end loop;
    end restore_customers;
-
-
-
 
    procedure restore_orders (
       p_target_date in date
@@ -248,9 +246,6 @@ create or replace package body pkg_dml_rollback as
          end if;
       end loop;
    end restore_orders;
-
-
-
 
    procedure restore_payments (
       p_target_date in date
@@ -415,6 +410,7 @@ create or replace package body pkg_dml_rollback as
       restore_payments(p_target_date);
       commit;
       g_disable_logging := false;
+      g_rollback_date := systimestamp;
    end rollback_changes;
 
    procedure rollback_changes (
@@ -434,7 +430,7 @@ select *
  order by change_date asc;
 
 begin
-   pkg_dml_rollback.rollback_changes(to_date('2025-05-04 18:12:42',
+   pkg_dml_rollback.rollback_changes(to_date('2025-05-05 19:26:24',
                                      'YYYY-MM-DD HH24:MI:SS'));
    commit;
 end;
